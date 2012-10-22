@@ -43,7 +43,7 @@ unImage x = case x of
     RGB  y -> (RGB,  y)
 
 opts = info pConfig 
-    (fullDesc 
+    (fullDesc  
     & progDesc "Resize an image with a HEIGHT and WIDTH or a PERCENT"
     & header   "resizer - a simple image resizing app")
     
