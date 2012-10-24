@@ -12,6 +12,9 @@ import Control.Exception(catch, throwIO)
 import System.IO.Error(isDoesNotExistError)
 import Options.Applicative
 import Control.Monad.Identity(Identity, runIdentity)
+import Data.Array.Repa.Repr.ForeignPtr
+import Foreign.Storable.Tuple
+import Foreign.ForeignPtr
 
 main = execParser opts >>= run
  
@@ -24,9 +27,9 @@ run (Config {..}) = do
   removeFile _outputPath `catch` handleExists
             
   runIL $ do
-    (tag, image) <- unImage <$> readImage _inputPath 
+    image <- readImage _inputPath 
     
-    let Size oldWidth oldHeight = toSize . listOfShape . extent $ image
+    let [_, oldWidth, oldHeight] = listOfShape . extent . unImage $ image
         newSize = case _newSize of
              Percent p -> Size (ceiling $ p * fromIntegral oldWidth) 
                                (ceiling $ p * fromIntegral oldHeight)
@@ -35,12 +38,30 @@ run (Config {..}) = do
              SizeOption (Just w) (Just h) -> Size w h
              SizeOption _ _   -> error $ "Need either a height, a width, " ++
                                          "a height and a width, or a percent"
+                                         
+    let newImage = 
+          case image of
+             RGB x -> RGB . unpackRGB . runIdentity . computeP . resizeRGB (packRGB x) $ newSize
 
-    writeImage _outputPath . tag . runIdentity . computeP . resize image $ newSize
+    writeImage _outputPath newImage
 
+packRGB :: Array F DIM3 Word8  -> Array F DIM2 RGBPixelWord8 
+packRGB x = result where
+    result    = fromForeignPtr (newExtent $ extent x) pixelPtr  
+    pixelPtr  = castForeignPtr $ toForeignPtr x :: ForeignPtr RGBPixelWord8
+    newExtent (Z :. x :. y :. _) = Z :. x :. y 
+
+unpackRGB :: Array F DIM2 RGBPixelWord8 -> Array F DIM3 Word8 
+unpackRGB x = result where
+    result    = fromForeignPtr (newExtent $ extent x) pixelPtr  
+    pixelPtr  = castForeignPtr $ toForeignPtr x :: ForeignPtr Word8
+    newExtent (Z :. x :. y) = Z :. x :. y :. 3
+
+unImage :: Image -> Array F DIM3 Word8
 unImage x = case x of
-    RGBA y -> (RGBA, y)
-    RGB  y -> (RGB,  y)
+    RGB y -> y
+    RGBA y -> y 
+
 
 opts = info pConfig 
     (fullDesc  

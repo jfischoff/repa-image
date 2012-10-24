@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts, RecordWildCards, DeriveFunctor #-}
+{-# LANGUAGE FlexibleContexts, RecordWildCards, DeriveFunctor, BangPatterns,
+    MagicHash, UnboxedTuples #-}
 module Data.Array.Repa.Image.Resample where
 import Data.Array.Repa
 import Data.Array.Repa.Unsafe
 import Data.Word
---import Data.Array.Repa.Specialised.Dim2
+import Data.Array.Repa.Specialised.Dim2
 
 --TODO first change the image to use 
 
@@ -15,37 +16,47 @@ data Index = Index {
     }
     deriving(Show)
 
-data DIM3Neighborhood = DIM3Neighborhood {
-        iTopLeft     :: !DIM3,
-        iTopRight    :: !DIM3,
-        iBottomLeft  :: !DIM3,
-        iBottomRight :: !DIM3
+data DIM2Neighborhood = DIM2Neighborhood {
+        iTopLeft     :: !DIM2,
+        iTopRight    :: !DIM2,
+        iBottomLeft  :: !DIM2,
+        iBottomRight :: !DIM2
     }
 
 data DoubleNeighborhood = DoubleNeighborhood {
-        dTopLeft     :: !Float,
-        dTopRight    :: !Float,
-        dBottomLeft  :: !Float,
-        dBottomRight :: !Float
+        dTopLeft     :: !RGBPixelDouble,
+        dTopRight    :: !RGBPixelDouble,
+        dBottomLeft  :: !RGBPixelDouble, 
+        dBottomRight :: !RGBPixelDouble 
     }
 
-toDouble :: (DIM3 -> Word8) -> DIM3Neighborhood -> DoubleNeighborhood
-toDouble f (DIM3Neighborhood {..}) = DoubleNeighborhood 
-    (fromIntegral (f (iTopLeft    ))) 
-    (fromIntegral (f (iTopRight   ))) 
-    (fromIntegral (f (iBottomLeft )))
-    (fromIntegral (f (iBottomRight)))
+toDouble :: (DIM2 -> RGBPixelWord8) -> DIM2Neighborhood -> DoubleNeighborhood
+toDouble f (!DIM2Neighborhood {..}) = DoubleNeighborhood 
+    (fromIntegralT (f (iTopLeft    ))) 
+    (fromIntegralT (f (iTopRight   ))) 
+    (fromIntegralT (f (iBottomLeft )))
+    (fromIntegralT (f (iBottomRight))) where
+        
+    fromIntegralT (!x, !y, !z) = (fromIntegral x, fromIntegral y, fromIntegral z)
+    {-# INLINE fromIntegralT #-}
+    
 {-# INLINE toDouble #-}
 
-resize :: Source r Word8 => Array r DIM3 Word8 -> Size -> Array D DIM3 Word8
-resize image newSize@(Size w h) = traverse image resizeShape elemFn where
-    elemFn get (Z :. hi :. wi :. p) = bilinear newIndex neighborhood where 
-        newIndex@(Index nwi nhi) = remapIndex oldW oldH w h (fromIntegral wi) (fromIntegral hi)
-        neighborhood             = toDouble get $ closestFour
-                                         (Z :. ceiling nhi :. ceiling nwi :. p)
+type RGBPixel a = (a, a, a)
+type RGBPixelDouble = RGBPixel Float
+type RGBPixelWord8  = RGBPixel Word8
+
+{-# INLINE resizeRGB #-}
+resizeRGB :: Source r RGBPixelWord8 
+       => Array r DIM2 RGBPixelWord8 -> Size -> Array D DIM2 RGBPixelWord8
+resizeRGB image newSize@(Size w h) = traverse image resizeShape elemFn where
+    elemFn get (Z :. hi :. wi) = bilinear newIndex neighborhood where 
+        !newIndex@(Index nwi nhi) = remapIndex oldW oldH w h (fromIntegral wi) (fromIntegral hi)
+        !neighborhood             = toDouble get $ closestFour (extent image)
+                                         (Z :. ceiling nhi :. ceiling nwi)
     {-# INLINE resizeShape #-}
-    resizeShape (Z :. _ :. _ :. x) = Z :. h :. w :. x
-    [_, oldW, oldH]                = listOfShape $ extent image
+    resizeShape (Z :. _ :. _) = Z :. h :. w
+    ![!oldW, !oldH]           = listOfShape $ extent image
 
 {-# INLINE remapIndex #-}    
 remapIndex :: Int -> Int -> Int -> Int -> Float -> Float -> Index 
@@ -53,28 +64,43 @@ remapIndex oldW oldH w h x y =
     Index ((oldW </> w) * x) ((oldH </> h) * y) where 
 
         {-# INLINE (</>) #-}
-        a </> b = fromIntegral a / fromIntegral b
+        (</>) !a !b = fromIntegral a / fromIntegral b
     
-{-# INLINE resize #-}
 
-bilinear :: Index -> DoubleNeighborhood -> Word8 
-bilinear (Index {..}) (DoubleNeighborhood {..}) = ceiling $
-    dBottomRight * (1 - x') * (1 - y') + dBottomLeft * x' * (1 - y') +
-    dTopRight    * (1 - x') * y'       + dTopLeft    * x' * y' where
+bilinear :: Index -> DoubleNeighborhood -> RGBPixelWord8 
+bilinear (!Index {..}) (!DoubleNeighborhood {..}) = ceilingT $
+    dBottomRight <.> ((1 - x') * (1 - y')) <+> dBottomLeft <.> (x' * (1 - y')) <+>
+    dTopRight    <.> ((1 - x') * y')       <+> dTopLeft    <.> (x' * y') where
     
-    y' = y - (fromIntegral $ floor y)
-    x' = x - (fromIntegral $ floor x)
+    ceilingT !(!x, !y, !z) = (ceiling x, ceiling y, ceiling z)
+    {-# INLINE ceilingT #-}
+    
+    (<+>) !(!x0, !y0, !z0) !(!x1, !y1, !z1) = (x0 + x1, y0 + y1, z0 + z1)
+    {-# INLINE (<+>) #-}
+    
+    (<.>) !(!x, !y, !z) !s = (s*x, s*y, s*z) 
+    {-# INLINE (<.>) #-}
+    
+    !y' = y - (fromIntegral $ floor y)
+    !x' = x - (fromIntegral $ floor x)
 {-# INLINE bilinear #-}
 
 toSize :: [Int] -> Size
-toSize [_, w, h] = Size w h
+toSize [w, h] = Size w h
 {-# INLINE toSize #-}
 
     
-closestFour :: DIM3 -> DIM3Neighborhood 
-closestFour (Z :. i :. j :. p) = 
-    DIM3Neighborhood (Z :. i     :. j :. p) (Z :. i     :. j + 1 :. p)
-                 (Z :. i + 1 :. j :. p) (Z :. i + 1 :. j + 1 :. p)
+closestFour :: DIM2 -> DIM2 -> DIM2Neighborhood 
+closestFour !extent (Z :. i :. j) = 
+    DIM2Neighborhood (clampToBorder2' (Z :. i     :. j    )) 
+                     (clampToBorder2' (Z :. i     :. j + 1))
+                     (clampToBorder2' (Z :. i + 1 :. j    )) 
+                     (clampToBorder2' (Z :. i + 1 :. j + 1)) where
+
+    {-# INLINE clampToBorder2' #-}
+    clampToBorder2' = clampToBorder2 extent
+
+                     
 {-# INLINE closestFour #-}
 
 

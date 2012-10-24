@@ -71,7 +71,8 @@ executable Resizer
                    repa-devil ==0.3.*,
                    directory == 1.*,
                    optparse-applicative == 0.4.*,
-                   mtl == 2.1.*
+                   mtl == 2.1.*,
+                   storable-tuple == 0.0.*
                    
     ghc-options: -Odph -rtsopts -threaded -fno-liberate-case -funfolding-use-threshold1000 -funfolding-keeness-factor1000 -fllvm -optlo-O3
     -- -prof -fprof-auto
