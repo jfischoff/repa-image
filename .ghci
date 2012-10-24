@@ -1,2 +1,2 @@
-:set -i./src -i./tests
-:load tests/Main.hs
+:set -isrc
+:load src/Data/Array/Repa/Image/ResampleStencil.hs
