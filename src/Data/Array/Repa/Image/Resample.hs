@@ -68,12 +68,12 @@ remapIndex oldW oldH w h x y =
     
 
 bilinear :: Index -> DoubleNeighborhood -> RGBPixelWord8 
-bilinear (!Index {..}) (!DoubleNeighborhood {..}) = ceilingT $
+bilinear (!Index {..}) (!DoubleNeighborhood {..}) = floorT $
     dBottomRight <.> ((1 - x') * (1 - y')) <+> dBottomLeft <.> (x' * (1 - y')) <+>
     dTopRight    <.> ((1 - x') * y')       <+> dTopLeft    <.> (x' * y') where
     
-    ceilingT !(!x, !y, !z) = (ceiling x, ceiling y, ceiling z)
-    {-# INLINE ceilingT #-}
+    floorT !(!x, !y, !z) = (floor x, floor y, floor z)
+    {-# INLINE floorT #-}
     
     (<+>) !(!x0, !y0, !z0) !(!x1, !y1, !z1) = (x0 + x1, y0 + y1, z0 + z1)
     {-# INLINE (<+>) #-}
