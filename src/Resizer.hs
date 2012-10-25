@@ -8,7 +8,7 @@ import Data.Array.Repa.IO.DevIL
 import Control.Monad
 import System.Directory
 import Control.Applicative
-import Control.Exception(catch, throwIO)
+import qualified Control.Exception as Exception
 import System.IO.Error(isDoesNotExistError)
 import Options.Applicative
 import Control.Monad.Identity(Identity, runIdentity)
@@ -22,9 +22,9 @@ run (Config {..}) = do
   --just try to remove the file (prevents an unlikely race condition)
   let handleExists e
           | isDoesNotExistError e = return ()
-          | otherwise = throwIO e
+          | otherwise = Exception.throwIO e
   
-  removeFile _outputPath `catch` handleExists
+  removeFile _outputPath `Exception.catch` handleExists
             
   runIL $ do
     image <- readImage _inputPath 
